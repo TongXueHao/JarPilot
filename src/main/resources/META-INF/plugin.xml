@@ -1,0 +1,48 @@
+<!-- Plugin Configuration File. Read more: https://plugins.jetbrains.com/docs/intellij/plugin-configuration-file.html -->
+<idea-plugin>
+    <!-- Unique identifier of the plugin. It should be FQN. It cannot be changed between the plugin versions. -->
+    <id>org.htx</id>
+
+    <!-- Public plugin name should be written in Title Case.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-name -->
+    <name>JarPilot</name>
+
+    <!-- A displayed Vendor name or Organization ID displayed on the Plugins Page. -->
+    <vendor email="haod0705@163.comm" url="">htx</vendor>
+    <version>1.0</version>
+    <!-- Description of the plugin displayed on the Plugin Page and IDE Plugin Manager.
+         Simple HTML elements (text formatting, paragraphs, and lists) can be added inside of <![CDATA[ ]]> tag.
+         Guidelines: https://plugins.jetbrains.com/docs/marketplace/plugin-overview-page.html#plugin-description -->
+    <description><![CDATA[
+    A lightweight tool for managing remote Spring Boot services directly inside IntelliJ IDEA.<br><br>
+    <ul>
+        <li>Upload JAR files to remote servers</li>
+        <li>Start & stop Spring Boot services remotely</li>
+        <li>Real-time log streaming with color highlighting (like IDEA console)</li>
+        <li>PID & port-based service management</li>
+    </ul>
+    <br>
+    Simplify your remote Spring Boot workflow without leaving the IDE.
+]]></description>
+
+
+    <!-- Product and plugin compatibility requirements.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-compatibility.html -->
+    <depends>com.intellij.modules.platform</depends>
+
+    <!-- Extension points defined by the plugin.
+         Read more: https://plugins.jetbrains.com/docs/intellij/plugin-extension-points.html -->
+    <extensions defaultExtensionNs="com.intellij">
+        <toolWindow id="JarPilot"
+                    anchor="bottom"
+                    canCloseContents="true"
+                    icon="icons/pluginIcon.svg"
+                    factoryClass="org.htx.ui.MyToolWindowFactory"/>
+        <projectService serviceImplementation="org.htx.service.PersistentStateService"/>
+        <console.folding implementation="org.htx.ui.MyStackTraceFolding"/>
+    </extensions>
+
+
+    <actions>
+    </actions>
+</idea-plugin>
