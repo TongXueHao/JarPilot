@@ -1,10 +1,35 @@
+/**
+ * MIT License
+ *
+ * Copyright (c) 2025 Hao Tong Xue
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 package org.htx.ui;
 
+import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
 import com.intellij.ui.AnimatedIcon;
@@ -27,6 +52,13 @@ import java.awt.*;
 import java.io.File;
 import java.io.IOException;
 
+/**
+ * Factory for creating the tool window with multiple tabs.
+ *
+ * @Author Hao Tong Xue
+ * @Date 2025/8/20 10:00
+ * @Version 1.0
+ */
 public class MyToolWindowFactory implements ToolWindowFactory {
 
     private int tabIndex = 1;
@@ -74,12 +106,12 @@ public class MyToolWindowFactory implements ToolWindowFactory {
 
         ConnectionUtils connectionUtils = new ConnectionUtils();
 
-        ConnectionForm connectionForm = buildConnectionForm(project, windowState, connectionUtils, stateService, windowId);
+        ConnectionForm connectionForm = buildConnectionForm(project, windowState, connectionUtils, stateService, windowId, consoleView);
         panel.add(connectionForm.getPanel(), BorderLayout.NORTH);
 
         JPanel westPanel = new JPanel(new BorderLayout());
 
-        PushForm pushForm = buildPushForm(project, connectionForm, connectionUtils);
+        PushForm pushForm = buildPushForm(project, connectionForm, connectionUtils, consoleView);
 
         ServiceForm serviceForm = buildServiceForm(project,windowState, connectionForm, connectionUtils, consoleView, stateService, windowId);
 
@@ -130,6 +162,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
 
             boolean isConnected = connectionForm.getConnectButton().getIcon() == AllIcons.Actions.Suspend;
             if (!isConnected) {
+                consoleView.appendLog("ERROR: Please connect first!", ConsoleViewContentType.LOG_ERROR_OUTPUT);
                 ConnectionNotifier.notifyConnectionResult(project, false, "Please Connection first!");
                 return;
             }
@@ -140,6 +173,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
 
                     String port = serviceForm.getPortField().getText();
                     String jarPath = serviceForm.getJarField().getText();
+                    String activeText = serviceForm.getActiveField().getText();
                     String pidPath = jarPath.replace(".jar", ".pid");
                     String logPath = jarPath.replace(".jar", ".out");
 
@@ -173,18 +207,16 @@ public class MyToolWindowFactory implements ToolWindowFactory {
 
                     // ---------------- START ----------------
                     consoleView.appendLog("===== [START SERVICE] =====", ConsoleViewContentType.NORMAL_OUTPUT);
-                    String startCmd = CommandTemplate.START_SPRING_BOOT_JAR_WITH_PID.render(jarPath, jarPath, port, logPath, pidPath, jarPath);
+                    String startCmd = CommandTemplate.START_SPRING_BOOT_JAR_WITH_PID.render(jarPath, jarPath, StringUtil.isEmpty(activeText) ? "" : ("--spring.profiles.active=" + activeText), port, logPath, pidPath, jarPath);
                     String startOutput = connectionUtils.exec(startCmd);
 
                     consoleView.appendLog("Command: " + startCmd, ConsoleViewContentType.LOG_DEBUG_OUTPUT);
                     consoleView.appendLog(startOutput, ConsoleViewContentType.NORMAL_OUTPUT);
 
                     if (startOutput.contains("No such file") || startOutput.contains("cannot find")) {
-                        consoleView.appendLog("ERROR: Remote JAR file does not exist: " + jarPath, ConsoleViewContentType.ERROR_OUTPUT);
-                        return;
+                        throw new RuntimeException("Remote JAR file does not exist: " + jarPath);
                     } else if (startOutput.contains("Permission denied")) {
-                        consoleView.appendLog("ERROR: Permission denied on remote server.", ConsoleViewContentType.ERROR_OUTPUT);
-                        return;
+                        throw new RuntimeException("Permission denied on remote server.");
                     } else {
                         consoleView.appendLog("INFO: Service started successfully on port " + port, ConsoleViewContentType.NORMAL_OUTPUT);
                         consoleView.appendLog("INFO: Logs redirected to " + logPath, ConsoleViewContentType.LOG_WARNING_OUTPUT);
@@ -199,6 +231,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                         startStopButton.setIcon(AllIcons.Actions.Suspend);
                         windowState.serverPort = Integer.parseInt(port);
                         windowState.jarPath = jarPath;
+                        windowState.activeField = activeText;
                         stateService.setWindowState(windowId, windowState);
                         ConnectionNotifier.notifyConnectionResult(project, true, "Start successful!");
                     });
@@ -249,6 +282,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                 } catch (Exception ex) {
                     consoleView.appendLog("ERROR: Failed to close log stream: " + ex.getMessage(),
                             ConsoleViewContentType.LOG_ERROR_OUTPUT);
+                    SwingUtilities.invokeLater(() -> viewCloseLogButton.setIcon(AllIcons.Actions.Execute));
                     throw new RuntimeException(ex);
                 }
 
@@ -280,7 +314,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
         return serviceForm;
     }
 
-    private static @NotNull ConnectionForm buildConnectionForm(Project project, PersistentStateService.WindowState windowState, ConnectionUtils connectionUtils, PersistentStateService stateService, String windowId) {
+    private static @NotNull ConnectionForm buildConnectionForm(Project project, PersistentStateService.WindowState windowState, ConnectionUtils connectionUtils, PersistentStateService stateService, String windowId, SpringBootLogConsole consoleView) {
         ConnectionForm connectionForm = new ConnectionForm(project, windowState);
         connectionForm.setOnConnect(e -> {
             JButton connectButton = connectionForm.getConnectButton();
@@ -290,6 +324,8 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                     connectionUtils.close();
                     connectButton.setIcon(AllIcons.Actions.Execute);
                     connectionForm.enableAllFields();
+                    consoleView.appendLog("Disconnected from " + connectionForm.getHost(), ConsoleViewContentType.NORMAL_OUTPUT);
+
                     ConnectionNotifier.notifyConnectionResult(project, true, "Disconnect successful!");
                 } catch (Exception ex) {
                     ConnectionNotifier.notifyConnectionResult(project, false, "Disconnect failed!");
@@ -320,6 +356,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                         windowState.port = connectionForm.getPort();
                         stateService.setWindowState(windowId, windowState);
 
+                        consoleView.appendLog("Connected to " + connectionForm.getHost() + " successfully.", ConsoleViewContentType.NORMAL_OUTPUT);
                         ConnectionNotifier.notifyConnectionResult(project, true, "Connection successful!");
                     });
 
@@ -328,6 +365,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                         connectButton.setEnabled(true);
                         connectButton.setIcon(AllIcons.Actions.Execute);
                     });
+                    consoleView.appendLog("ERROR: Connection failed: " + ex1.getMessage(), ConsoleViewContentType.LOG_ERROR_OUTPUT);
                     ConnectionNotifier.notifyConnectionResult(project, false, "Connection failed!");
                 }
             });
@@ -335,12 +373,13 @@ public class MyToolWindowFactory implements ToolWindowFactory {
         return connectionForm;
     }
 
-    private static @NotNull PushForm buildPushForm(Project project, ConnectionForm connectionForm, ConnectionUtils connectionUtils) {
+    private static @NotNull PushForm buildPushForm(Project project, ConnectionForm connectionForm, ConnectionUtils connectionUtils, SpringBootLogConsole consoleView) {
         PushForm pushForm = new PushForm(project);
         pushForm.setOnUpload(e -> {
 
             boolean isConnected = connectionForm.getConnectButton().getIcon() == AllIcons.Actions.Suspend;
             if (!isConnected) {
+                consoleView.appendLog("ERROR: Please connect first!", ConsoleViewContentType.LOG_ERROR_OUTPUT);
                 ConnectionNotifier.notifyConnectionResult(project, false, "Please Connection first!");
                 return;
             }
@@ -359,7 +398,9 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                 File remoteFile = new File(remotePath);
 
                 try {
-                    connectionUtils.exec(CommandTemplate.MKDIRS_UNIX.render(remoteFile.getParent()));
+                    try {
+                        connectionUtils.exec(CommandTemplate.MKDIRS_UNIX.render(remoteFile.getParent()));
+                    }catch (Exception ignored){}
                     connectionUtils.exec(CommandTemplate.DELETE_FILE_UNIX.render(remotePath));
                     SftpUtil.upload(
                             connectionForm.getHost(), connectionForm.getPort(), connectionForm.getUser(), connectionForm.getPassword(),
@@ -368,10 +409,14 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                             new SftpProgressMonitor() {
                                 long transferred = 0;
                                 final long startTime = System.currentTimeMillis();
+                                int lastLoggedProgress = 0;
 
                                 @Override
                                 public void init(int op, String src, String dest, long max) {
                                     progressBar.setValue(0);
+                                    String logMsg = String.format("|%-20s|   0%% (start upload %s -> %s)",
+                                            "", localPath, dest);
+                                    consoleView.appendLog(logMsg, ConsoleViewContentType.NORMAL_OUTPUT);
                                 }
 
                                 @Override
@@ -381,11 +426,22 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                                     long elapsed = System.currentTimeMillis() - startTime;
                                     double speed = (elapsed > 0) ? transferred / 1024.0 / (elapsed / 1000.0) : 0;
                                     String speedText;
+                                    int currentProgress = (int) progress;
 
                                     if (speed >= 1024) {
                                         speedText = String.format("%.2f MB/s", speed / 1024.0);
                                     } else {
                                         speedText = String.format("%.2f KB/s", speed);
+                                    }
+
+                                    if (currentProgress >= lastLoggedProgress + 5 || currentProgress == 100) {
+                                        int barLength = 20;
+                                        int filled = (int) (progress / 100 * barLength);
+                                        String bar = "|" + "=".repeat(filled) + " ".repeat(barLength - filled) + "|";
+                                        String logMsg = String.format("%s %3d%% (%s)", bar, currentProgress, speedText);
+
+                                        consoleView.appendLog(logMsg, ConsoleViewContentType.NORMAL_OUTPUT);
+                                        lastLoggedProgress = currentProgress;
                                     }
 
                                     SwingUtilities.invokeLater(() -> {
@@ -397,6 +453,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
 
                                 @Override
                                 public void end() {
+                                    consoleView.appendLog( String.format("|%-20s|   100%% (upload complete %s -> %s)","", localPath, remotePath), ConsoleViewContentType.NORMAL_OUTPUT);
                                     ConnectionNotifier.notifyConnectionResult(project, true, remoteFile.getName() + " Upload successful!");
                                     pushForm.getUploadInfo().setText("100%");
                                 }

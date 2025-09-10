@@ -21,34 +21,36 @@
  * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
  * SOFTWARE.
  */
-package org.htx.ui;
+package org.htx.service;
 
-import com.intellij.execution.ConsoleFolding;
-import com.intellij.openapi.project.Project;
-import org.jetbrains.annotations.NotNull;
-import org.jetbrains.annotations.Nullable;
-
-import java.util.List;
-
-/**
- * Custom console folding for stack traces.
+/** Utility class for regex-based validations.
  *
  * @Author Hao Tong Xue
- * @Date 2025/9/1 14:00
+ * @Date 2025/8/27 15:00
  * @Version 1.0
  */
-public class MyStackTraceFolding extends ConsoleFolding {
-    @Override
-    public boolean shouldFoldLine(@NotNull Project project, @NotNull String line) {
-        return line.trim().startsWith("at java.")
-            || line.trim().startsWith("at javax.")
-            || line.trim().startsWith("at sun.")
-            || line.trim().startsWith("at org.springframework."); 
+public final class RegexUtil {
+
+    /**
+     * check if the given path is a valid Linux file path.
+     * @param path the file path to check
+     * @return  true if valid, false otherwise
+     */
+    public static boolean isValidLinuxPath(String path) {
+        if (path == null) return false;
+        String regex = "^\\/(?=.*[A-Za-z])[A-Za-z0-9._\\-/]+$";
+        return path.matches(regex);
     }
 
-    @Nullable
-    @Override
-    public String getPlaceholderText(@NotNull Project project, @NotNull List<String> lines) {
-        return "... " + lines.size() + " lines folded ...";
+    /**
+     * check if the given profile is valid.
+     * @param profile the profile to check
+     * @return true if valid, false otherwise
+     */
+    public static boolean isValidProfile(String profile) {
+        return profile != null && profile.matches("^[a-zA-Z0-9_-]+(,[a-zA-Z0-9_-]+)*$");
     }
+
+
+
 }

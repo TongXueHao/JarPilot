@@ -1,3 +1,26 @@
+/**
+ * MIT License
+ *
+ * Copyright (c) 2025 Hao Tong Xue
+ *
+ * Permission is hereby granted, free of charge, to any person obtaining a copy
+ * of this software and associated documentation files (the "Software"), to deal
+ * in the Software without restriction, including without limitation the rights
+ * to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+ * copies of the Software, and to permit persons to whom the Software is
+ * furnished to do so, subject to the following conditions:
+ *
+ * The above copyright notice and this permission notice shall be included in all
+ * copies or substantial portions of the Software.
+ *
+ * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+ * IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+ * FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+ * AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+ * LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+ * OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+ * SOFTWARE.
+ */
 package org.htx.ui;
 
 import com.intellij.openapi.project.Project;
@@ -8,6 +31,7 @@ import com.intellij.ui.DocumentAdapter;
 import com.intellij.ui.JBColor;
 import com.intellij.ui.components.JBTextField;
 import com.intellij.util.ui.JBUI;
+import org.htx.service.RegexUtil;
 import org.jetbrains.annotations.NotNull;
 import javax.swing.*;
 import javax.swing.event.DocumentEvent;
@@ -17,6 +41,13 @@ import java.io.File;
 import java.nio.file.InvalidPathException;
 import java.nio.file.Paths;
 
+/**
+ * Form for pushing local JAR to remote server.
+ *
+ * @Author Hao Tong Xue
+ * @Date 2025/8/27 14:30
+ * @Version 1.0
+ */
 public class PushForm {
 
     private final JBTextField localJarField = new JBTextField(20);
@@ -114,6 +145,17 @@ public class PushForm {
                 updateUploadButton(false);
                 return new ValidationInfo("Remote JAR path cannot be empty", remoteJarField);
             }
+
+            if (!remote.endsWith(".jar")) {
+                updateUploadButton(false);
+                return new ValidationInfo("Remote JAR path must be an existing .jar file", remoteJarField);
+            }
+
+            if(!RegexUtil.isValidLinuxPath(remote)) {
+                updateUploadButton(false);
+                return new ValidationInfo("Remote Jar path must be valid path with linux", remoteJarField);
+            }
+
             try {
                 Paths.get(remote); // 如果能解析成路径，则合法
             } catch (InvalidPathException e) {
