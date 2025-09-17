@@ -23,12 +23,12 @@
  */
 package org.htx.ui;
 
-import com.intellij.codeInsight.hint.HintManager;
 import com.intellij.execution.ui.ConsoleViewContentType;
 import com.intellij.icons.AllIcons;
 import com.intellij.openapi.actionSystem.*;
 import com.intellij.openapi.application.ApplicationManager;
 import com.intellij.openapi.project.Project;
+import com.intellij.openapi.util.Disposer;
 import com.intellij.openapi.util.text.StringUtil;
 import com.intellij.openapi.wm.ToolWindow;
 import com.intellij.openapi.wm.ToolWindowFactory;
@@ -51,6 +51,7 @@ import javax.swing.*;
 import java.awt.*;
 import java.io.File;
 import java.io.IOException;
+import java.util.concurrent.atomic.AtomicBoolean;
 
 /**
  * Factory for creating the tool window with multiple tabs.
@@ -66,17 +67,18 @@ public class MyToolWindowFactory implements ToolWindowFactory {
     @Override
     public void createToolWindowContent(@NotNull Project project, @NotNull ToolWindow toolWindow) {
 
-        createNewTab(project, toolWindow);
+        PersistentStateService stateService = PersistentStateService.getInstance(project);
+
         toolWindow.addContentManagerListener(new ContentManagerListener() {
             @Override
             public void contentAdded(@NotNull ContentManagerEvent event) {
-                System.out.println(1);
                 ContentManagerListener.super.contentAdded(event);
             }
 
             @Override
             public void contentRemoved(@NotNull ContentManagerEvent event) {
                 ContentManagerListener.super.contentRemoved(event);
+                stateService.getAllWindowStatesMutable().remove(event.getContent().getTabName());
             }
         });
 
@@ -88,6 +90,20 @@ public class MyToolWindowFactory implements ToolWindowFactory {
             }
         });
 
+        AtomicBoolean isInit = new AtomicBoolean(true);
+        stateService.getAllWindowStatesMutable().forEach((id, state) -> {
+            if (StringUtil.isNotEmpty(state.host)) {
+                initTab(project, toolWindow, id, stateService);
+                isInit.set(false);
+            }else {
+                stateService.getAllWindowStatesMutable().remove(id);
+            }
+        });
+
+        if(isInit.get()){
+            createNewTab(project, toolWindow);
+        }
+
         ActionToolbar toolbar = ActionManager.getInstance()
                 .createActionToolbar("MyToolWindowToolbar", actionGroup, true);
         toolbar.setTargetComponent(toolWindow.getComponent());
@@ -96,24 +112,30 @@ public class MyToolWindowFactory implements ToolWindowFactory {
 
     private void createNewTab(Project project, ToolWindow toolWindow) {
 
-        String windowId = "Tab " + tabIndex;
         PersistentStateService stateService = PersistentStateService.getInstance(project);
-        PersistentStateService.WindowState windowState = stateService.getWindowState(windowId);
+        String windowId = "Tab " + tabIndex;
+        initTab(project, toolWindow, windowId, stateService);
+    }
+
+    private void initTab(Project project, ToolWindow toolWindow, String id, PersistentStateService stateService) {
+        PersistentStateService.WindowState windowState = stateService.getWindowState(id);
 
         SpringBootLogConsole consoleView = new SpringBootLogConsole(project);
 
         JPanel panel = new JPanel(new BorderLayout());
 
+        ContentFactory contentFactory = toolWindow.getContentManager().getFactory();
+        Content content = contentFactory.createContent(panel, id, false);
         ConnectionUtils connectionUtils = new ConnectionUtils();
 
-        ConnectionForm connectionForm = buildConnectionForm(project, windowState, connectionUtils, stateService, windowId, consoleView);
+        ConnectionForm connectionForm = buildConnectionForm(project, windowState, connectionUtils, stateService, id, consoleView, content);
         panel.add(connectionForm.getPanel(), BorderLayout.NORTH);
 
         JPanel westPanel = new JPanel(new BorderLayout());
 
         PushForm pushForm = buildPushForm(project, connectionForm, connectionUtils, consoleView);
 
-        ServiceForm serviceForm = buildServiceForm(project,windowState, connectionForm, connectionUtils, consoleView, stateService, windowId);
+        ServiceForm serviceForm = buildServiceForm(project,windowState, connectionForm, connectionUtils, consoleView, stateService, id);
 
         pushForm.getPanel().setBorder(JBUI.Borders.customLineBottom(JBColor.border()));
 
@@ -124,35 +146,59 @@ public class MyToolWindowFactory implements ToolWindowFactory {
         panel.add(consoleView.getConsoleView().getComponent(), BorderLayout.CENTER);
 
         connectionForm.setOnConnect(e->{
-            JButton connectButton = connectionForm.getConnectButton();
-
-            if (connectButton.getIcon() == AllIcons.Actions.Suspend) {
-                try {
-                    String port = serviceForm.getPortField().getText();
-                    String jarPath = serviceForm.getJarField().getText();
-                    String pidPath = jarPath.replace(".jar", ".pid");
-                    JBTextField logField = serviceForm.getLogField();
-                    String stopCmd = CommandTemplate.STOP_SPRING_BOOT.render(pidPath, pidPath, pidPath, port, port, port, port);
-                    String closeCmd = CommandTemplate.CLOSE_SPRING_BOOT_LOG.render(logField.getText());
-                    connectionUtils.exec(stopCmd);
-                    connectionUtils.exec(closeCmd);
-
-                } catch (Exception ignored) {}finally {
-                    SwingUtilities.invokeLater(() -> {
-                        serviceForm.getViewCloseLogButton().setIcon(AllIcons.Actions.Execute);
-                        serviceForm.getStartStopButton().setIcon(AllIcons.Actions.Execute);
-                        serviceForm.getStartStopButton().setEnabled(true);
-                    });
-                }
-            }
+            releaseALl(project, connectionForm, serviceForm, connectionUtils, consoleView);
         });
 
-        ContentFactory contentFactory = toolWindow.getContentManager().getFactory();
-        Content content = contentFactory.createContent(panel, windowId, false);
+        content.setDisplayName(connectionForm.getHost().isEmpty() ? id : connectionForm.getHost());
+        content.setTabName(id);
         content.setCloseable(true);
+        Disposer.register(content, () -> releaseALl(project, connectionForm, serviceForm, connectionUtils, consoleView));
         toolWindow.getContentManager().addContent(content);
-
         tabIndex++;
+    }
+
+    private static void releaseALl(Project project, ConnectionForm connectionForm, ServiceForm serviceForm, ConnectionUtils connectionUtils, SpringBootLogConsole consoleView) {
+        JButton connectButton = connectionForm.getConnectButton();
+
+        if (connectionForm.isConnection()) {
+
+            connectButton.setEnabled(false);
+
+            try {
+                String port = serviceForm.getPortField().getText();
+                String jarPath = serviceForm.getJarField().getText();
+                JBTextField logField = serviceForm.getLogField();
+                String logPath = logField.getText();
+                String pidPath = jarPath.replace(".jar", ".pid");
+                String stopCmd = CommandTemplate.STOP_SPRING_BOOT.render(
+                        pidPath, pidPath, pidPath, port, port, port, port);
+                String closeCmd = CommandTemplate.CLOSE_SPRING_BOOT_LOG.render(logPath);
+
+                try {
+                    connectionUtils.exec(stopCmd);
+                } catch (Exception ignored) {}
+
+                try {
+                    connectionUtils.exec(closeCmd);
+                }catch (Exception ignored){}
+
+                connectionUtils.close();
+                connectionForm.setConnection(false);
+                consoleView.appendLog("Disconnected from " + connectionForm.getHost(), ConsoleViewContentType.NORMAL_OUTPUT);
+                ConnectionNotifier.notifyConnectionResult(project, true, "Disconnect " + connectionForm.getHost() + " successful!");
+            } catch (Exception ignored) {
+                ConnectionNotifier.notifyConnectionResult(project, false, "Disconnect " + connectionForm.getHost() + " failed!");
+            } finally {
+                SwingUtilities.invokeLater(() -> {
+                    serviceForm.getViewCloseLogButton().setIcon(AllIcons.Actions.Execute);
+                    serviceForm.getStartStopButton().setIcon(AllIcons.Actions.Execute);
+                    serviceForm.getStartStopButton().setEnabled(true);
+                    connectButton.setEnabled(true);
+                    connectButton.setIcon(AllIcons.Actions.Execute);
+                    connectionForm.enableAllFields();
+                });
+            }
+        }
     }
 
     private static @NotNull ServiceForm buildServiceForm(Project project, PersistentStateService.WindowState windowState, ConnectionForm connectionForm, ConnectionUtils connectionUtils, SpringBootLogConsole consoleView, PersistentStateService stateService, String windowId) {
@@ -314,29 +360,15 @@ public class MyToolWindowFactory implements ToolWindowFactory {
         return serviceForm;
     }
 
-    private static @NotNull ConnectionForm buildConnectionForm(Project project, PersistentStateService.WindowState windowState, ConnectionUtils connectionUtils, PersistentStateService stateService, String windowId, SpringBootLogConsole consoleView) {
+    private static @NotNull ConnectionForm buildConnectionForm(Project project, PersistentStateService.WindowState windowState, ConnectionUtils connectionUtils, PersistentStateService stateService, String windowId, SpringBootLogConsole consoleView, Content content) {
         ConnectionForm connectionForm = new ConnectionForm(project, windowState);
         connectionForm.setOnConnect(e -> {
+
             JButton connectButton = connectionForm.getConnectButton();
+            if (!connectionForm.isConnection() && connectButton.getIcon() == AllIcons.Actions.Execute) {
+                connectButton.setEnabled(false);
+                connectButton.setIcon(AnimatedIcon.Default.INSTANCE);
 
-            if (connectButton.getIcon() == AllIcons.Actions.Suspend) {
-                try {
-                    connectionUtils.close();
-                    connectButton.setIcon(AllIcons.Actions.Execute);
-                    connectionForm.enableAllFields();
-                    consoleView.appendLog("Disconnected from " + connectionForm.getHost(), ConsoleViewContentType.NORMAL_OUTPUT);
-
-                    ConnectionNotifier.notifyConnectionResult(project, true, "Disconnect successful!");
-                } catch (Exception ex) {
-                    ConnectionNotifier.notifyConnectionResult(project, false, "Disconnect failed!");
-                }
-                return;
-            }
-
-            connectButton.setEnabled(false);
-            connectButton.setIcon(AnimatedIcon.Default.INSTANCE);
-
-            ApplicationManager.getApplication().executeOnPooledThread(() -> {
                 try {
                     connectionUtils.connect(
                             connectionForm.getHost(),
@@ -346,6 +378,7 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                     );
 
                     SwingUtilities.invokeLater(() -> {
+                        connectionForm.setConnection(true);
                         connectButton.setEnabled(true);
                         connectButton.setIcon(AllIcons.Actions.Suspend);
                         connectionForm.disableAllFields();
@@ -355,9 +388,9 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                         windowState.passWord = connectionForm.getPassword();
                         windowState.port = connectionForm.getPort();
                         stateService.setWindowState(windowId, windowState);
-
+                        content.setDisplayName(connectionForm.getHost());
                         consoleView.appendLog("Connected to " + connectionForm.getHost() + " successfully.", ConsoleViewContentType.NORMAL_OUTPUT);
-                        ConnectionNotifier.notifyConnectionResult(project, true, "Connection successful!");
+                        ConnectionNotifier.notifyConnectionResult(project, true, "Connection " + connectionForm.getHost() + " successful!");
                     });
 
                 } catch (IOException ex1) {
@@ -368,7 +401,9 @@ public class MyToolWindowFactory implements ToolWindowFactory {
                     consoleView.appendLog("ERROR: Connection failed: " + ex1.getMessage(), ConsoleViewContentType.LOG_ERROR_OUTPUT);
                     ConnectionNotifier.notifyConnectionResult(project, false, "Connection failed!");
                 }
-            });
+
+            }
+
         });
         return connectionForm;
     }

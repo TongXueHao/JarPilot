@@ -27,6 +27,7 @@ import com.intellij.openapi.components.PersistentStateComponent;
 import com.intellij.openapi.components.State;
 import com.intellij.openapi.components.Storage;
 import com.intellij.openapi.project.Project;
+import org.apache.commons.lang3.StringUtils;
 import org.jetbrains.annotations.NotNull;
 import org.jetbrains.annotations.Nullable;
 
@@ -76,11 +77,23 @@ public class PersistentStateService implements PersistentStateComponent<Persiste
 
     /** Get or create state for a specific window */
     public WindowState getWindowState(String windowId) {
-        return state.windowStates.computeIfAbsent(windowId, id -> new WindowState());
+        WindowState windowState = state.windowStates.computeIfAbsent(windowId, id -> new WindowState());
+        if (StringUtils.isNoneEmpty(windowState.passWord)) {
+            windowState.passWord = CryptoUtils.decrypt(windowState.passWord);
+        }
+        return windowState;
     }
 
     /** Update state for a specific window */
     public void setWindowState(String windowId, WindowState windowState) {
+        if(StringUtils.isNoneEmpty(windowState.passWord)){
+            windowState.passWord = CryptoUtils.encrypt(windowState.passWord);
+        }
         state.windowStates.put(windowId, windowState);
     }
+
+    public Map<String, WindowState> getAllWindowStatesMutable() {
+        return state.windowStates;
+    }
+
 }

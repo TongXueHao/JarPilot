@@ -25,15 +25,18 @@ package org.htx.log;
 
 import com.intellij.execution.ui.ConsoleViewContentType;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 public class LogColorDetector {
 
+    // 捕获日志级别，大小写不敏感，支持 WARN / WARNING
     private static final Pattern LEVEL_PATTERN =
-            Pattern.compile("\\b(TRACE|DEBUG|INFO|WARN|ERROR|FATAL)\\b");
+            Pattern.compile("\\b(TRACE|DEBUG|INFO|WARN|WARNING|ERROR|FATAL)\\b",
+                    Pattern.CASE_INSENSITIVE);
 
     private static final Pattern EX_START =
-            Pattern.compile("^(?:[a-zA-Z0-9_.]+\\.)+[A-Z][A-Za-z0-9_$]+(?:Exception|Error)(:.*)?$");
+            Pattern.compile("^(?:[a-zA-Z0-9_.]+\\.)?[A-Z][A-Za-z0-9_$]+(?:Exception|Error)(:.*)?$");
     private static final Pattern STACK_LINE =
             Pattern.compile("^\\s*at\\s+.*\\(.*\\)$");
     private static final Pattern CAUSED_BY =
@@ -51,16 +54,23 @@ public class LogColorDetector {
             return ConsoleViewContentType.LOG_INFO_OUTPUT;
         }
 
-        if (LEVEL_PATTERN.matcher(line.toUpperCase()).find()) {
+        Matcher levelMatcher = LEVEL_PATTERN.matcher(line);
+        if (levelMatcher.find()) {
             inThrowable = false;
-            if (line.contains("ERROR") || line.contains("FATAL")) {
-                return ConsoleViewContentType.LOG_ERROR_OUTPUT;
-            } else if (line.contains("WARN")) {
-                return ConsoleViewContentType.LOG_WARNING_OUTPUT;
-            } else if (line.contains("DEBUG") || line.contains("TRACE")) {
-                return ConsoleViewContentType.LOG_DEBUG_OUTPUT;
-            } else {
-                return ConsoleViewContentType.LOG_INFO_OUTPUT;
+            String level = levelMatcher.group(1).toUpperCase();
+            switch (level) {
+                case "ERROR":
+                case "FATAL":
+                    return ConsoleViewContentType.LOG_ERROR_OUTPUT;
+                case "WARN":
+                case "WARNING":
+                    return ConsoleViewContentType.LOG_INFO_OUTPUT;
+                case "DEBUG":
+                case "TRACE":
+                    return ConsoleViewContentType.LOG_DEBUG_OUTPUT;
+                case "INFO":
+                default:
+                    return ConsoleViewContentType.LOG_WARNING_OUTPUT;
             }
         }
 

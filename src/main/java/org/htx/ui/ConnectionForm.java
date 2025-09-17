@@ -58,6 +58,8 @@ public class ConnectionForm {
     private final JButton connectButton = new JButton();
     private final JBPanel mainPanel;
 
+    private boolean isConnection = false;
+
     private static final String IPV4_REGEX =
             "^((25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)\\.){3}" +
                     "(25[0-5]|2[0-4]\\d|1\\d{2}|[1-9]?\\d)$";
@@ -269,4 +271,11 @@ public class ConnectionForm {
         return connectButton;
     }
 
+    public boolean isConnection() {
+        return isConnection;
+    }
+
+    public void setConnection(boolean connection) {
+        isConnection = connection;
+    }
 }
